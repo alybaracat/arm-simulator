@@ -1,0 +1,945 @@
+<html>
+<h1>ARM Simulator</h1>
+<style>
+body {
+    background-color: rgb(55, 171, 150);;
+}
+
+h1 { font-family: Futura, 'Trebuchet MS', Arial, sans-serif;
+    color: rgb(252, 246, 233);;
+    text-align: center;
+    font-size: 40px;
+}
+h3 { font-family: Futura, 'Trebuchet MS', Arial, sans-serif;
+
+}
+
+</style>
+<div>
+  <input type="file" id="file-input" />
+</div>
+<div>
+  <textarea id="text-input" rows="4" cols="50"></textarea>
+</div>
+  <h3>Contents of the file:</h3>
+  <pre id="file-content"></pre>
+</html>
+
+
+
+<script>
+
+var Mem= new Uint8Array(1024)
+var Reg= new Uint32Array(16)
+var CReg=new Uint32Array(16)
+var Sr= new Uint32Array(1)
+var Pc=15
+var Lr=14
+var Sp=13
+var Textarray
+var terminate
+
+var userInput = []
+
+function readSingleFile(e) {
+  var file = e.target.files[0];
+  if (!file) {
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var contents = e.target.result;
+    Textarray= contents.split("\n")
+    console.log(Textarray)
+
+    //Fill user input array
+    var textInputElement = document.getElementById('text-input')
+    userInput = textInputElement.value.split("\n")
+
+    binread(Textarray)
+
+
+
+  };
+  reader.readAsText(file);
+}
+
+
+document.getElementById('file-input')
+  .addEventListener('change', readSingleFile, false);
+
+
+function binread(Textarray)
+{
+var j=0 //index cursor reading
+
+for (var k = 0; k < 8; k++) //save the current Registers
+	CReg[k] = Reg[k];
+
+while(j < Textarray.length -1 && (Textarray[j]!="1101111010101101" || Textarray[j]!="57005")){
+  var value = Textarray[j] //Read string
+  var instrArray = new Uint16Array(1);//Array of 16 bits by element
+
+  console.log(value);
+
+  var decimal = true
+
+if(!decimal)
+{
+  //Convert string of bits to Uint16
+  for (var i =value.length-1;i>=0; i--)
+  {
+    var temp= value[i]<<value.length-i -1;
+    instrArray[0]=instrArray[0] | temp;
+  }
+}
+else {
+  instrArray[0] = value.toString(2)
+}
+  //TESTing any values
+//  Reg[3]=4
+  //Reg[5]=0x7FFFFFFF
+//  Reg[1]=0b1111111010000010
+
+  console.log(instrArray[0]);//cout instruction word
+  terminate = 0b0
+  simulate(instrArray[0]);
+  j++
+}
+for (var l = 0; l < 8; l++) //save the current Registers
+		{
+			if (Reg[l] != CReg[l])
+			{
+				display("The new value of R"+ l + " is: " +Reg[l] ); //print the change
+				CReg[l] = Reg[l]; // update
+			}}
+
+if(Textarray[j]!="1101111010101101" || Textarray[j]!="57005"){
+  display("PROGRAM TERMINATED :D")
+}
+}
+
+function displayContents(instr) {
+  var element = document.getElementById('file-content');
+  element.innerHTML += instr;
+  }
+
+function fillUserInput(type){
+
+//return Int
+  if(type == 0)
+  {
+    Reg[0] = parseInt(getCurrentUserInput())
+  }
+  //return String
+  else if (type == 1)
+  {
+    Reg[0] = getCurrentUserInput()
+  }
+  else if(type==2)
+  {
+    Reg[0] = getCurrentUserInput()[0]
+  }
+
+}
+
+function getCurrentUserInput()
+{
+  if(userInput.length > 0)
+  {  //delete from the array
+    var currentUserInput = userInput.splice(0,1)
+
+    return currentUserInput
+  }
+  else display("Error, no user input was defined")
+}
+
+function display(instr)
+{
+  console.log(instr);
+  instr= instr + "\n"
+  displayContents(instr)
+}
+
+function carryflag(x,y){
+  var sum= new Uint32Array(1);
+
+  var signtemp= x>>31
+  var xory= x^y
+  if(x==0){
+    if( xory >> 31 == 0b1) Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+
+  //
+    else{
+      sum = x + y
+      if(sum < x) Sr[0]= Sr[0] | 0x10000000
+      else Sr[0]= Sr[0] & 0xDFFFFFFF
+
+    }
+  }
+  else {
+    if((x ^ y)>>31 == 0b1) Sr[0]= Sr[0] & 0xDFFFFFFF
+    else {
+      Sr[0]= Sr[0] | 0x10000000
+    }
+
+  }
+
+
+}
+
+function simulate(instr){
+  var fmt,op,offset5,rd,rs,offset3,rn,offset8,op1,offset,sign,Lb,ro,Bl,offset_9bits,cond,H,Rlist,y,rb
+  fmt=0
+  op=1
+  offset5=2
+  rd=3
+  rs=4
+  offset3=5
+  rn=6
+  offset8=7
+  op1=8
+  offset=9
+  sign=10
+  Lb=11
+  ro=12
+  Bl=13
+  cond=15
+  H=16
+  Rlist=17
+  y=18
+  rb=19
+
+  var part = new Uint8Array(20);//Array of 8 bits by element
+  var part32= new Uint32Array(1);
+  offset_9bits=0
+
+  var part16 = new Uint16Array(1);
+
+  part[fmt]= instr >> 13
+
+  switch(part[fmt]){
+        case 0:             // format 1/2
+            part[op] = (instr >> 11) & 3;
+            part[rd] = instr & 7;
+            part[rs] = (instr >>  3) & 7;
+            part[offset5] = (instr >> 6) & 0x1F;
+            if(part[op]!=3) {     // format 1
+
+                    switch(part[op]){
+                          case 0:
+                                Reg[part[rd]]=Reg[part[rs]]<<part[offset5]
+                                if(Reg[part[rd]] >> 31 == 0b1) Sr[0]= Sr[0] | 0x80000000
+                                else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                                if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                                Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                                Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+
+                                display("LSL" + "\t" + "r" + part[rd] + ",r" + part[rs]+ "," + part[offset5] + "\n"); break;
+
+                        case 1:
+                                Reg[part[rd]]=Reg[part[rs]]>>part[offset5]
+                                if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                                else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                                if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                                Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                                Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+
+                                display("LSR" + "\t" + "r" + part[rd] + ",r" + part[rs]+ "," + part[offset5] + "\n");break;
+
+                        case 2:
+
+                                if(Reg[part[rs]]>>31 == 0b1) {//most significant is 1
+                                Reg[part[rd]]=Reg[part[rs]]>>part[offset5] //Arithmetic shift
+                                var tempadd = Math.pow(2,offset5) - 1 << (32 - offset5) //remaining bits
+                                Reg[part[rd]]=Reg[part[rd]] | tempadd
+                                Sr[0]=Sr[0] | 0x80000000 //set the Negative bit to 1
+                                }
+                                else {
+                                Reg[part[rd]]=Reg[part[rs]]>>part[offset5] //normal shift right
+                                Sr[0]=Sr[0]& 0x7FFFFFFF //most significant bit is zero
+                              }
+                                if( Reg[part[rd]] == 0 )Sr[0]= Sr[0] |0x40000000 //check if result =0
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                                Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                                Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+
+                                display("ASR" + "\t" + "r" + part[rd] + ",r" + part[rs]+ "," + part[offset5] + "\n");break;
+
+                    }
+                  }
+                  else { /*add/sub*/
+                part[rn] = part[offset5] & 0x07;
+                part[offset3] = part[rn]
+                var xoroffset = Reg[part[rs]] ^ part[offset5] //xor to check if different sign
+                var xorrn = Reg[part[rs]] ^ Reg[part[rn]] //xor to check if different sign
+                var temp
+                if((part[offset5] & 0x08) == 0){
+
+                  temp ="add\t" +"r" +part[rd] +",r" +part[rs];
+                	if((part[offset5] & 0x10) == 0){
+                    	temp = temp + (",r" + part[rn] + "\n");
+                      display(temp)
+
+                    	Reg[part[rd]] = Reg[part[rs]] + Reg[part[rn]];
+                      var xorresult = Reg[part[rd]] ^ Reg[part[rs]]
+
+                      //UPDATE FLAGs
+                      if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                      else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                      if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                      else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                      //Carry
+                      carryflag(Reg[part[rs]],Reg[part[rn]])
+                      //overflow
+                      if ( (xorrn >> 31) == 0b1 ) Sr[0]= Sr[0] & 0xEFFFFFFF // different sign: set the overflow flag 0
+                      else if((xorresult >> 31) == 0b0) Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                      else Sr[0]= Sr[0] | 0x10000000  //result has a wrong sign Set the overflow flag with 1
+                      break;
+                    }
+                	else {
+                    	temp= temp +(",#" + part[offset3] + "\n");
+                      display(temp)
+
+                    	Reg[part[rd]] = Reg[part[rs]] + part[offset3];
+                      var xorresult = Reg[part[rd]] ^ Reg[part[rs]]
+                      //UPDATE FLAGs
+                      if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                      else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                      if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                      else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                      //Carry
+                      carryflag(Reg[part[rs]],part[offset3])
+                      //overflow
+                      if ( (xoroffset >> 31) == 0b1 ) Sr[0]= Sr[0] & 0xEFFFFFFF // different sign: set the overflow flag 0
+                      else if((xorresult >> 31) == 0b0) Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                      else Sr[0]= Sr[0] | 0x10000000  //result has a wrong sign Set the overflow flag with 1
+                      break;
+                    }
+                }
+                else {
+                  temp=("sub\t" +"r" +part[rd] +",r" +part[rs]);
+                    if((part[offset5] & 0x10) == 0){
+                      temp=temp+(",r" + part[rn] + "\n");
+                    	Reg[part[rd]] = Reg[part[rs]] - Reg[part[rn]];
+                      display(temp)
+                      if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                      else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                      if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                      else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                      //Carry
+                      carryflag(Reg[part[rs]],-Reg[part[rn]])
+                      //overflow
+
+                    }
+                	else {
+                    temp= temp +(",#" + part[offset3] + "\n");
+                    	Reg[part[rd]] = Reg[part[rs]] - part[offset3];
+                      display(temp)
+                      if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                      else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                      if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                      else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                      //Carry
+                      carryflag(Reg[part[rs]],-part[offset3])
+                      //overflow
+
+                    }
+				}
+} break;
+      case 1: part[op] = (instr >> 11) & 3;
+              part[rd] = (instr>>8) & 7;
+              part[offset8] = instr  & 0xFF;
+              var temp2;
+                    switch(part[op]){
+                          case 0:
+                                Reg[part[rd]]=part[offset8]
+                                temp2= "MOV\tr"+part[rd]+",#"+part[offset8]+"\n";break;
+
+                          case 1:
+                                var tempo = part[rd]-part[offset8]
+                                if(tempo<0)Sr[0]=Sr[0] | 0x80000000
+                                else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative;
+                                if(tempo==0)Sr[0]=Sr[0] | 0x40000000
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF
+                                //we don't update the OVERLOAD AND CARRY
+                                temp2="CMP\tr"+part[rd]+",#"+part[offset8]+"\n";
+                                //Update CPSR
+                                break;
+                          case 2:
+                                var xortemp= Reg[part[rd]] ^ part[offset8] //xor to check if different sign
+                                Reg[part[rd]]=Reg[part[rd]]+ part[offset8] //add rd to offset
+                                var resultxor = Reg[part[rd]] ^ part[offset8]//xor the result with offset
+
+                                temp2="ADD\tr"+part[rd]+",r"+part[rd]+",#"+part[offset8]+"\n";
+                                if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                                else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                                if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                                //Carry
+                                carryflag(Reg[part[rs]],part[offset8])
+
+                                //overflow
+                                if ( ((xortemp >> 31)&0b1) == 0b1 ) Sr[0]= Sr[0] & 0xEFFFFFFF // different sign: set the overflow flag 0
+                                else if(((resultxor >> 31)&0b1) == 0b0) Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                                else Sr[0]= Sr[0] | 0x10000000  //result has a wrong sign Set the overflow flag with 1
+                                break;
+
+                          case 3:
+                                var xortemp = Reg[part[rd]] ^ part[offset8] //xor to check if different sign
+                                var Reg_rdcopy = Reg[part[rd]]
+                                Reg[part[rd]]=Reg[part[rd]] - part[offset8]
+                                var resultxor = Reg[part[rd]] ^ Reg_rdcopy//xor the result with offset
+                                temp2="SUB\tr"+part[rd]+",r"+part[rd]+",#"+part[offset8]+"\n";
+                                if(Reg[part[rd]] >> 31 == 0b1)Sr[0]=Sr[0] | 0x80000000
+                                else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                                if(Reg[part[rd]] == 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                                else Sr[0]=Sr[0] & 0xBFFFFFFF;
+
+                                //Carry mesh 3arif
+                                carryflag(Reg[part[rs]],- part[offset8])
+
+                                //overflow
+                                if ( (xortemp >> 31) == 0b0 ) Sr[0]= Sr[0] & 0xEFFFFFFF // same sign: set the overflow flag 0
+                                else if((resultxor >> 31) == 0b0) Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                                else Sr[0]= Sr[0] | 0x10000000  //result has a wrong sign Set the overflow flag with 1
+                                break;
+
+
+                        }
+                        display(temp2)
+                        break;
+        case 2: part[op1] = (instr >> 11) & 3
+                console.log("TESTTTT  " + part[op1])
+                if (part[op1] == 0)//format 4,5
+        				{
+
+                part[op] = (instr >> 6) & 0b1111; //ALU OPERATIONS
+                part[rs] = (instr>>3) & 7;
+                part[rd] = instr & 7;
+                var temp2;
+                  switch(part[op]){
+
+                    case 0:  Reg[part[rd]]= Reg[part[rd]]& Reg[part[rs]] ;
+                    temp2= "AND\tr"+part[rd]+",r"+part[rs]+"\n";
+                    Reg[part[rd]]=Reg[part[rs]]<<part[offset5]
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                    Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                    //Updating condition codes
+                    break;
+
+                    case 1:  Reg[part[rd]]= Reg[part[rd]] ^ Reg[part[rs]] ;
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                    Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                    temp2= "EOR\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    break;
+
+                    case 2:  Reg[part[rd]]= Reg[part[rd]] << Reg[part[rs]] ;
+                    temp2= "LSL\tr"+part[rd]+",r"+part[rs]+"\n";
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                    Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                    //Updating condition codes
+                    break;
+
+                    case 3:  Reg[part[rd]]= Reg[part[rd]] >> Reg[part[rs]] ;
+                    temp2= "LSR\tr"+part[rd]+",r"+part[rs]+"\n";
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                    Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                    //Updating condition codes
+                    break;
+
+                    case 4:
+                    if(Reg[part[rd]]>>31 == 0b1)  {
+                      //most significant is 1
+                      Reg[part[rd]]=Reg[part[rs]]>>part[offset5] //Arithmetic shift
+                      var tempadd = Math.pow(2,offset5) - 1 << (32 - offset5) //remaining bits
+                      Reg[part[rd]]=Reg[part[rd]] | tempadd
+                      Sr[0]=Sr[0] | 0x80000000 //set the Negative bit to 1
+
+                    }
+                    else {
+                     Reg[part[rd]]= Reg[part[rd]] >> Reg[part[rs]] ;
+                     Sr[0]=Sr[0]& 0x7FFFFFFF //most significant bit is zero
+                   }
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    Sr[0]= Sr[0] & 0xDFFFFFFF //set the carry flag 0
+                    Sr[0]= Sr[0] & 0xEFFFFFFF //set the overflow flag 0
+                    temp2= "ASR\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    break;
+
+                    case 5:  Reg[part[rd]]= Reg[part[rd]] + Reg[part[rs]] + (Sr[0]<<29 & 1) ; //ADD with Carry
+                    temp2= "ADC\tr"+part[rd]+",r"+part[rs]+"\n";
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+
+
+                    break;
+
+                    case 6:  Reg[part[rd]]= Reg[part[rd]] - Reg[part[rs]] - ~(Sr[0]<<29 & 1) ; //subtract with carry
+                    temp2= "SBC\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    break;
+
+                    case 7:  Reg[part[rd]]= Reg[part[rd]] - Reg[part[rs]] - ~(Sr[0]<<29 & 1) ;//ROTATE RIGHT ?????!!
+                    temp2= "ROR\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    break;
+
+                    case 8: var tsttemp=  Reg[part[rd]] & Reg[part[rs]]
+                    temp2= "TST\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(tsttemp>>31 == 1)Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(tsttemp== 0)Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 9:  Reg[part[rd]]=  - Reg[part[rs]] ; //Negate
+                    temp2= "NEG\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 10:  var cmptemp=  Reg[part[rd]] - Reg[part[rs]]
+                    temp2= "CMP\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 11:  var cmntemp=  Reg[part[rd]] + Reg[part[rs]]
+                    temp2= "CMN\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 12:  Reg[part[rd]]= Reg[part[rd]] | Reg[part[rs]] ;
+                    temp2= "ORR\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 13:  Reg[part[rd]]= Reg[part[rd]] * Reg[part[rs]];
+                    temp2= "MUL\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    break;
+
+                    case 14:  Reg[part[rd]]= Reg[part[rd]] & ~(Reg[part[rs]]) ;
+                    temp2= "BIC\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                    case 15:  Reg[part[rd]]= ~ Reg[part[rs]] ;
+                    temp2= "MVN\tr"+part[rd]+",r"+part[rs]+"\n";
+                    //Updating condition codes
+                    if(Reg[part[rd]>>31 == 1])Sr[0]=Sr[0] | 0x80000000
+                    else Sr[0]=Sr[0]& 0x7FFFFFFF//if the most significant bit is 1 - the number is negative
+                    if(Reg[part[rd] == 0])Sr[0]= Sr[0] |0x40000000 //check if result =0
+                    else Sr[0]=Sr[0] & 0xBFFFFFFF;
+                    //Updating condition codes
+                    break;
+
+                  }
+                display(temp2)}
+                  else if (part[op1] == 1) //format 6
+				{
+					var temp;
+					// Extract destination register
+					part[rd] = (instr >> 8) & 7;
+					// Extract unsigned offset
+					part[offset] = (instr) & 0xFF;
+          console.log("PART OFFSEST is " + part[offset])
+
+					var newoffset = part[offset] << 2;
+					temp = (Reg[Pc] & 0xfe) + newoffset; //  bit 1 of the PC is forced to 0 to ensure it is word aligned.
+					Reg[part[rd]] = Mem[temp] + (Mem[temp + 1] << 8) + (Mem[temp + 2] << 16) + (Mem[temp  +3] << 24); // Load word from the resulting address into rd
+					display("LDR\tr" + part[rd] + "[PC,#" + newoffset + "]\n" );
+				}
+        else { //format 7,8
+					part[sign] = (instr >> 9) & 1;
+					if (part[sign] == 0)//format 7
+					{
+						part[ro] = (instr >> 6) & 7;
+						part[rd] = instr & 7;
+						part[rb] = (instr >> 3) & 7;
+						part[Lb] = (instr >> 10) & 3;
+						switch (part[Lb])
+						{
+						case 0:Mem[part[rb] + part[ro]] = Reg[rd] & 0xff;
+							Mem[part[rb] + part[ro] + 1] = (Reg[part[rd]] >> 8) & 0xff;
+							Mem[part[rb] + part[ro] + 2] = (Reg[part[rd]] >> 16) & 0xff;
+							Mem[part[rb] + part[ro] + 3] = (Reg[part[rd]] >> 24) & 0xff;
+							display("str\tr" + part[rd] + ",[r" + part[rb] + ",r" +part[ro] + "]\n"); break;
+						case 1:Mem[part[rb] + part[ro]] = Reg[part[rd]] & 0xff;
+            display("strb\tr" + part[rd] + ",[r" + part[rb] + ",r" +part[ro] + "]\n"); break;
+						case 2:Reg[part[rd]] = (Mem[part[rb] + part[ro]]) + (Mem[part[rb] + part[ro] + 1] << 8) + (Mem[part[rb] + part[ro] + 2] << 16) + (Mem[part[rb] + part[ro] + 3] << 24);
+            display("ldr\tr" + part[rd] + ",[r" + part[rb] + ",r" +part[ro] + "]\n"); break;
+						case 3:Reg[part[rd]] = Mem[part[rb] + part[ro]];
+            display("ldrb\tr" + part[rd] + ",[r" + part[rb] + ",r" +part[ro] + "]\n"); break;
+						}
+
+					}
+					//else //format 8
+					//	display("%s", "UNKOWN\n");  //ET2akid min dih
+
+
+				}
+          break;
+          case 3: //format 9
+        				   part[offset5] = (instr >> 6) & 0x1F;
+        				   part[rd] = instr & 7;
+        				   part[rb] = (instr >> 3) & 7;
+        				   part[Bl] = (instr >> 11) & 3;
+        				   switch (part[Bl])
+        				   {
+        				   case 0:Mem[part[rb] + part[offset5]] = Reg[part[rd]] & 0xff;
+        					   Mem[part[rb] + part[offset5] + 1] = (Reg[part[rd]] >> 8) & 0xff;
+        					   Mem[part[rb] + part[offset5] + 2] = (Reg[part[rd]] >> 16) & 0xff;
+        					   Mem[part[rb] + part[offset5] + 3] = (Reg[part[rd]] >> 24) & 0xff;
+                    display("str\tr" + part[rd] + ",[r" + part[rb] + "#" +part[offset5] + "]\n"); break;
+        				   case 1:Reg[part[rd]] = (Mem[part[rb] + part[offset5]]) + (Mem[part[rb] + part[offset5] + 1] << 8) + (Mem[part[rb] + part[offset5] + 2] << 16)+ (Mem[part[rb] + part[offset5] + 3] << 24);
+                   display("ldr\tr" + part[rd] + ",[r" + part[rb] + "#" +part[offset5] + "]\n"); break;
+        				   case 2:Mem[part[rb] + part[offset5]] = Reg[part[rd]] & 0xff;
+                   display("strb\tr" + part[rd] + ",[r" + part[rb] + "#" +part[offset5] + "]\n"); break;
+        				   case 3:Reg[part[rd]] = Mem[part[rb] + part[offset5]];
+                   display("ldrb\tr" + part[rd] + ",[r" + part[rb] + "#" +part[offset5] + "]\n"); break;
+        				   }
+        				   break;
+
+          case 5:
+
+         				  if (((instr >> 10) & 7 )== 4) // Condition for Add offset to stack pointer - format 13
+         				  {
+         					  // Extract unsigned offset
+         					  part16[offset_9bits] = (instr & 0x7F);
+         					  part16[offset_9bits] = part16[offset_9bits] << 2; // Shift the offset to the left by 2 bits, setting bits 1 and 0 to 0
+         					  //Check signed flag
+         					  if (((instr >> 7) & 1) == 0) // Offset is positive so we add immediate value to the stack pointer
+         					  {
+                      display("ADD\tr" + Sp +",#" + part16[offset_9bits]);
+         						  Reg[Sp] += part16[offset_9bits];
+         					  }
+         					  else
+         					  if (((instr >> 7) & 1) == 1) // Offset is negative so we subtract immediate value to the stack pointer
+         					  {
+         						  display("ADD\tr" + Sp +",#-" + part16[offset_9bits]);
+         						  Reg[Sp] -= part16[offset_9bits];
+
+         					  }
+         				  }
+
+         				  else if ((((instr >> 12) & 1) == 1) && (((instr >> 10) & 1) == 1))// Push Pop condition - format 14
+         				  {
+         					  // Extract Rlist
+         					  part[Rlist] = (instr)& 0xFF;
+         					  if (((instr >> 11) & 1)== 0) // Condition of L being 0, we push to the stack
+         					  {
+         						  // Loop on each bit on the Rlist
+         						  var printtemp= "PUSH\t{";
+         						  for (var i = 0; i < 8; i++)
+         						  {
+         							  part[y] = (Math.pow(2, i)); //mask
+                        console.log ("part rlist is: " + part[Rlist])
+                        var temptest = part[Rlist] & part[y]
+                        console.log ("part temptest is: " + temptest)
+
+         							  if ((part[Rlist] & part[y]) > 0)
+         							  {
+         								  part[Rlist] -= part[y];
+         								   // Push 32-bit register to the stack
+         								  Mem[Reg[Sp] - 3] = Reg[i] & 0xFF;
+         								  Mem[Reg[Sp] - 2] = (Reg[i] >> 8) & 0xFF;
+         								  Mem[Reg[Sp] - 1] = (Reg[i] >> 16) & 0xFF;
+         								  Mem[Reg[Sp]] = (Reg[i] >> 24) & 0xFF;
+         								  Reg[Sp] -= 4; // Decrement stack pointer by 4
+         								  if (part[Rlist]!=0){
+         									  printtemp = printtemp + "R" +  i + ",";
+                          }
+         								  else
+         									  printtemp = printtemp + "R" + i ; //last one without ","
+
+
+         							  }
+         						  }
+
+
+         						  if (((instr >> 8) & 1) == 1) // Condition of PC/LR bit being 1
+
+         						  {
+
+         							  // Push link register to the stack
+         							  Mem[Reg[Sp] - 3] = (Reg[Lr])& 0xFF;
+         							  Mem[Reg[Sp] - 2] = (Reg[Lr] >> 8) & 0xFF;
+         							  Mem[Reg[Sp] - 1] = (Reg[Lr] >> 16) & 0xFF;
+         							  Mem[Reg[Sp]] = (Reg[Lr] >> 24) & 0xFF;
+         							  Reg[Sp] -= 4; // Update stack pointer
+         							  printtemp = printtemp + ",R" + Lr + "}\n";
+                        display(printtemp)
+         						  }
+         						  else
+         						  {
+         							  printtemp = printtemp + "}\n";
+                        display(printtemp)
+
+         						  }
+         					  }
+         					  else
+         					  if (((instr >> 11) & 1) == 1) // condition of L being 1, we pop from the stack
+         					  {
+         						  // Loop on each bit of the Rlist
+         						  var printtemp = "POP\t{";
+         						  for (var i = 0; i < 8; i++)
+         						  {
+         							  part[y] = Math.pow(2, i);
+         							  if (((part[Rlist])& part[y]) > 0 )
+         							  {
+         								  part[Rlist] -= part[y];
+         								  // Pop the value off the stack to Reg[i] in the Rlist
+         								  Reg[i] = Mem[Reg[Sp]] + (Mem[Reg[Sp] + 1] << 8) + (Mem[Reg[Sp] + 2] << 16) + (Mem[Reg[Sp] + 3] << 24);
+         								  Reg[Sp] += 4; // Update Stack pointer
+         								  if (part[Rlist] != 0)
+         									  printtemp = printtemp + "R" + i + ",";
+         								  else
+         									  printtemp = printtemp + "R" + i; //last one without ","
+         							  }
+         						  }
+
+         						  if ((((instr >> 8)) & 1) == 1) // Condition of PC/LR bit being 1
+         						  {
+         							  Reg[Pc] = Mem[Reg[Sp]] + (Mem[Reg[Sp] + 1] << 8) + (Mem[Reg[Sp] + 2] << 16) + (Mem[Reg[Sp] + 3] << 24); // Pop the program counter off the stack
+         							  Reg[Sp] += 4; // update stack pointer
+         							  printtemp = printtemp + ",R" + Pc + "}\n";
+                        display(printtemp)
+         						  }
+         						  else{
+                      printtemp = printtemp + "}\n";
+                      display(printtemp)}
+
+         					  }
+         				  }
+         				  else
+         					  display("UNKOWN");
+         				  break;
+
+
+                  case 6:
+
+            				  if (((instr >> 12) & 1) == 0) //format 15
+            				  {
+
+            				  }
+            				  else //format 16,17
+            				  {
+            					  var Z, C, N, V;
+            						Z=((Sr[0]>>30) & 0b1);
+            						C=((Sr[0]>>29) & 0b1);
+            						N=((Sr[0]>>31) & 0b1);
+            						V=((Sr[0]>>28) & 0b1);
+            					  part[cond] = (instr >> 8) & 15;
+            					  var off = (instr & 0xff) & 0xfd;
+            					  if (part[cond] != 15) //format 16
+            					  {
+            						  switch (part[cond])
+            						  {
+
+            								  //format 16
+            							  case 0:
+            								  if (Z) Reg[Pc] += off; display("BEQ\t" +  Reg[Pc]);	break;
+            							  case 1:
+            								  if (!Z) Reg[Pc] += off; display("BNE\t" +  Reg[Pc]); break;
+            							  case 2:
+            								  if (C)  Reg[Pc] += off; display("BCS\t" +  Reg[Pc]); break;
+            							  case 3:
+            								  if (!C)  Reg[Pc] += off; display("BCC\t" +  Reg[Pc]); break;
+            							  case 4:
+            								  if (N)   Reg[Pc] += off; display("BMI\t" +  Reg[Pc]); break;
+            							  case 5:
+            								  if (!N)  Reg[Pc] += off; display("BPL\t" +  Reg[Pc]); break;
+            							  case 6:
+            								  if (V)   Reg[Pc] += off; display("BVS\t" +  Reg[Pc]); break;
+            							  case 7:
+            								  if (!V)  Reg[Pc] += off; display("BVC\t" +  Reg[Pc]); break;
+            							  case 8:
+            								  if (C && !Z)  Reg[Pc] += off; display("BHI\t" +  Reg[Pc]); break;
+            							  case 9:
+            								  if (Z && !C)  Reg[Pc] += off; display("BLS\t" +  Reg[Pc]); break;
+            							  case 10:
+            								  if (N == V)  Reg[Pc] += off; display("BGE\t" +  Reg[Pc]); break;
+            							  case 11:
+            								  if (N != V)  Reg[Pc] += off; display("BLT\t" +  Reg[Pc]); break;
+            							  case 12:
+            								  if (!Z && (N == V))  Reg[Pc] += off; display("BGT\t" +  Reg[Pc]); break;
+            							  case 13:
+            								  if (Z || (N != V))  Reg[Pc] += off; display("BLE\t" +  Reg[Pc]); break;
+            							  default: //cond=1110
+            								  display("UNKOWN\n");
+            								  break;
+
+            						  }
+            					   }
+            					  else     //software interrupt
+            					  {
+            						  var SWfunction = instr & 0xFF;
+                          display("SWI\t" + SWfunction + "\n")
+            						  switch (SWfunction)
+            						  {
+            						  case 0://print integer in r0
+                          console.log("R[0] = " + Reg[0])
+            							  display("Register R[0]: " + Reg[0]+ "\n");
+            							  break;
+            						  case 1: //read integer to r0
+            							  //scanf("%d", Reg[0]);
+                            fillUserInput(0);
+
+            							  break;
+            						  case 2: // print string in address r0
+            						  {
+            									  var i = 0;
+                                var printtemp;
+            									  while (Mem[Reg[0] + i] !=  0) {
+            										  printtemp =  printtemp + String.fromCharCode(Mem[Reg[0] + i]);
+            									  i++;}
+                                display(printtemp)
+            									  break;
+            						  }
+            						  case 3: // r0 address of input buffer, r1 maximum number of characters
+            					      {  var i = 0;
+            							  var nullt = 0b0;
+
+                            fillUserInput(1);
+            							  while (i < Reg[1] - 1 && !nullt)
+            							  {
+            								  if (Mem[Reg[0] + i] == 0 ) nullt = 0b1;
+            								  i++;
+            							  }
+            							  if (!nullt) Mem[Reg[0] + Reg[1] - 1] = 0;
+            							  break;
+            						  }
+            						  case 4: // print character in r0
+            							  display(String.fromCharCode(Reg[0]));
+            							  break;
+            						  case 5: // read character to r0
+                          fillUserInput(2);
+
+            							  break;
+            						  default: //terminate program
+            							  terminate = 0b1;
+            							  break;
+            						  }
+
+            					  }
+
+            				  }
+            				  break;
+
+          case 7:
+                      	if (((instr >> 11) & 3) == 0)//format 18
+                      			{
+                      					  var off;
+                      					  if (instr & 0x400)
+                      						  off = (instr & 0x7FF) - 0x800;
+                      					  else
+                      						  off = (instr & 0x7FF);
+                      					  Reg[Pc] += off << 1;
+                      					  display("B\t" + Reg[Pc] + "\n");
+                      				  }
+                      				  else //format 19
+                      				  {
+                      					  H = (instr >> 11) & 1;
+                      					  var off;
+                      					  off = instr & 0x7ff;
+
+                      					  if (H == 0)
+                      					  {
+
+                      						  off = off << 12;
+                      						  Reg[Lr] = Reg[Pc] + off;
+                      						  display("BL\t" + off + "\n");
+                      					  }
+
+                      					  else
+                      					  {
+                      						  part32[0] = Reg[Pc] + 2;
+                      						  off = off << 1;
+                      						  Reg[Pc] = Reg[Lr] + off;
+                      						  Reg[Lr] = part32[0]; //unsigned int temp
+                      					  }
+
+                      				  }
+                      				  break;
+
+
+                      		default:
+                      			display("UNKOWN\n"); break;
+
+
+
+
+}
+console.log(part)
+console.log(Reg)
+console.log("THE STATUS REGISTER :")
+console.log("THE Overflow flag:")
+console.log(Sr>>28 & 0b1)
+console.log("THE Carry flag:")
+console.log(Sr>>29 & 0b1)
+console.log("THE Zero flag:")
+console.log(Sr>>30 & 0b1)
+console.log("THE Negative flag flag:")
+console.log(Sr>>31 & 0b1)
+
+console.log("END OF INSTRUCTION\n \n ")
+
+}
+
+
+
+
+</script>
